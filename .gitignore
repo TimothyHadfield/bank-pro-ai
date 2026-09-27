@@ -1,0 +1,28 @@
+# Temp files written by the dashboard
+*.tmp
+tmp/
+temp/
+*._deleted_*/
+
+# Trained model checkpoints and saved training sessions (large; train your own)
+*.pt
+*.pth
+**/models/*
+saves/
+# ...except one small trained model per version, so Play vs AI works right after cloning
+!bank-ai-v1-ppo/models/checkpoint_4900.pt
+!bank-ai-v2-mcts/models/latest.pt
+
+# TensorBoard runs and logs
+runs/
+*.log
+logs/
+
+# Python cache
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Claude notes / prompts
+.claude/
+claude_code_prompt.txt

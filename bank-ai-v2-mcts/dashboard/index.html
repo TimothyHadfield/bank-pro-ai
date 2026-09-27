@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Bank AI v2 — MCTS Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="topbar">
+        <div class="brand">
+            <span class="brand-title">Bank AI v2</span>
+            <span class="brand-subtitle">MCTS + Neural Network</span>
+        </div>
+        <div id="status-badge" class="status-badge status-idle">idle</div>
+    </header>
+
+    <nav class="tabs" id="tabs">
+        <button class="tab active" data-tab="train">Training</button>
+        <button class="tab" data-tab="play">Play vs AI</button>
+        <button class="tab" data-tab="stats">Game Stats</button>
+        <button class="tab" data-tab="tournament">Tournament</button>
+        <button class="tab" data-tab="build">Build AI</button>
+    </nav>
+
+    <main>
+        <!-- ======================== TRAINING TAB ======================== -->
+        <section class="tab-panel active" id="panel-train">
+            <div class="card">
+                <h2>Training Control</h2>
+                <div class="controls-row">
+                    <label>Max iterations
+                        <input id="opt-max-iter" type="number" value="1000000" min="1">
+                    </label>
+                    <label>Games / iter
+                        <input id="opt-games-per-iter" type="number" value="50" min="1">
+                    </label>
+                    <label>Train steps / iter
+                        <input id="opt-steps-per-iter" type="number" value="100" min="1">
+                    </label>
+                    <label>Sims / move
+                        <input id="opt-sims" type="number" value="100" min="1">
+                    </label>
+                    <label>Batch size
+                        <input id="opt-batch" type="number" value="512" min="1">
+                    </label>
+                    <label>Workers (parallel)
+                        <input id="opt-workers" type="number" value="1" min="1" max="32"
+                               title="Run self-play across N parallel processes. Use benchmark.py to tune.">
+                    </label>
+                </div>
+                <div class="controls-row">
+                    <button id="btn-start" class="primary">Start training</button>
+                    <button id="btn-stop" class="danger" disabled>Stop training</button>
+                    <button id="btn-reset" class="secondary">Reset (delete checkpoints)</button>
+                    <span id="train-elapsed" class="muted"></span>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Save / Load Sessions</h2>
+                <div class="controls-row">
+                    <label>Save name
+                        <input id="save-name" type="text" placeholder="e.g. overnight-run-1">
+                    </label>
+                    <button id="btn-save" class="secondary">Save current session</button>
+                </div>
+                <div class="controls-row">
+                    <label>Load saved
+                        <select id="save-list"></select>
+                    </label>
+                    <button id="btn-load" class="secondary">Load</button>
+                </div>
+            </div>
+
+            <div class="charts-grid">
+                <div class="card chart-card">
+                    <h3>Loss</h3>
+                    <canvas id="chart-loss" height="200"></canvas>
+                </div>
+                <div class="card chart-card">
+                    <h3>MCTS visit entropy</h3>
+                    <canvas id="chart-entropy" height="200"></canvas>
+                </div>
+                <div class="card chart-card">
+                    <h3>Buffer size & age</h3>
+                    <canvas id="chart-buffer" height="200"></canvas>
+                </div>
+                <div class="card chart-card">
+                    <h3>Throughput (games/min)</h3>
+                    <canvas id="chart-throughput" height="200"></canvas>
+                </div>
+                <div class="card chart-card">
+                    <h3>Eval win rate (vs all opponents, all player counts)</h3>
+                    <canvas id="chart-eval" height="200"></canvas>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Latest evaluation breakdown</h3>
+                <div id="eval-breakdown" class="muted">no evaluation yet — runs every 10 iterations</div>
+            </div>
+
+            <div class="card">
+                <h3>Training log</h3>
+                <pre id="train-log" class="log"></pre>
+            </div>
+        </section>
+
+        <!-- ======================== PLAY VS AI TAB ======================== -->
+        <section class="tab-panel" id="panel-play">
+            <div class="card">
+                <h2>New game</h2>
+                <div class="controls-row">
+                    <label>Players
+                        <select id="play-num-players">
+                            <option value="2">2</option>
+                            <option value="3">3</option>
+                            <option value="4" selected>4</option>
+                            <option value="5">5</option>
+                            <option value="6">6</option>
+                        </select>
+                    </label>
+                    <label>Your seat
+                        <select id="play-human-seat">
+                            <option value="0" selected>0 (you)</option>
+                        </select>
+                    </label>
+                    <label>Checkpoint
+                        <select id="play-checkpoint">
+                            <option value="">(latest)</option>
+                        </select>
+                    </label>
+                    <label>Sims / move
+                        <select id="play-sims">
+                            <option value="50">50 (fast)</option>
+                            <option value="200" selected>200 (quality)</option>
+                            <option value="400">400 (max)</option>
+                        </select>
+                    </label>
+                    <button id="btn-play-new" class="primary">Start game</button>
+                </div>
+            </div>
+
+            <div class="card" id="play-board-card" style="display: none;">
+                <div id="play-board"></div>
+                <div class="controls-row" id="play-decision-row" style="margin-top: 16px;">
+                    <button id="btn-bank" class="primary">Bank</button>
+                    <button id="btn-continue" class="secondary">Continue</button>
+                    <span id="play-status-msg" class="muted"></span>
+                </div>
+                <div id="play-history" class="history-block"></div>
+            </div>
+        </section>
+
+        <!-- ======================== GAME STATS TAB ======================== -->
+        <section class="tab-panel" id="panel-stats">
+            <div class="card">
+                <h2>Two-dice probabilities</h2>
+                <p class="muted">Pure mathematical reference. No AI involved.</p>
+                <div class="charts-grid">
+                    <div class="chart-card">
+                        <h3>Sum distribution</h3>
+                        <canvas id="chart-dice-sums" height="240"></canvas>
+                    </div>
+                    <div class="chart-card">
+                        <h3>Special events</h3>
+                        <table class="data-table" id="table-special-events"></table>
+                    </div>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-card">
+                        <h3>Per-roll outcome breakdown (post-immunity)</h3>
+                        <table class="data-table" id="table-post-immunity"></table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ======================== TOURNAMENT TAB ======================== -->
+        <section class="tab-panel" id="panel-tournament">
+            <div class="card">
+                <h2>Tournament</h2>
+                <div class="controls-row">
+                    <label>Players per game
+                        <select id="trn-num-players">
+                            <option>2</option>
+                            <option>3</option>
+                            <option selected>4</option>
+                            <option>5</option>
+                            <option>6</option>
+                        </select>
+                    </label>
+                    <label>Games per matchup
+                        <input id="trn-games-per-matchup" type="number" value="30" min="1">
+                    </label>
+                    <button id="btn-trn-add-checkpoint" class="secondary">+ Checkpoint</button>
+                    <button id="btn-trn-add-threshold" class="secondary">+ Threshold bot</button>
+                    <button id="btn-trn-add-random" class="secondary">+ Random bot</button>
+                    <button id="btn-trn-run" class="primary">Run tournament</button>
+                </div>
+                <div id="trn-competitors" class="competitors-grid"></div>
+                <div id="trn-results"></div>
+            </div>
+        </section>
+
+        <!-- ======================== BUILD AI TAB ======================== -->
+        <section class="tab-panel" id="panel-build">
+            <div class="card">
+                <h2>Build AI — hand-coded strategy</h2>
+                <p class="muted">
+                    Define a function <code>decide(state)</code> that returns <code>'bank'</code>
+                    or <code>'continue'</code>. The state dict matches what the engine sends to bots.
+                </p>
+                <textarea id="build-code" class="code-editor" spellcheck="false">
+def decide(state):
+    # Bank if pot is big enough
+    if state["pot"] >= 200:
+        return "bank"
+    # Bank if you would be first
+    my = state["my_banked_score"] + state["pot"]
+    max_other = max(state["opponent_banked_scores"]) if state["opponent_banked_scores"] else 0
+    if my > max_other and state["round_number"] >= 8:
+        return "bank"
+    return "continue"
+</textarea>
+                <div class="controls-row" style="margin-top: 12px;">
+                    <label>Players
+                        <select id="build-num-players">
+                            <option>2</option>
+                            <option>3</option>
+                            <option selected>4</option>
+                            <option>5</option>
+                            <option>6</option>
+                        </select>
+                    </label>
+                    <label>Games
+                        <input id="build-games" type="number" value="200" min="1">
+                    </label>
+                    <label>Opponent threshold
+                        <input id="build-opp-threshold" type="number" value="200" min="1">
+                    </label>
+                    <button id="btn-build-run" class="primary">Run vs threshold bot</button>
+                </div>
+                <div id="build-results" class="muted"></div>
+            </div>
+        </section>
+    </main>
+
+    <script src="common.js"></script>
+    <script src="train.js"></script>
+    <script src="play.js"></script>
+    <script src="stats.js"></script>
+    <script src="tournament.js"></script>
+    <script src="build.js"></script>
+</body>
+</html>

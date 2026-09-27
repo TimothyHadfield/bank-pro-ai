@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bank AI</title>
+    <link rel="stylesheet" href="style.css?v=20260331f">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <!-- NAV BAR -->
+    <div class="nav-bar">
+        <h1 class="logo">BANK AI</h1>
+        <div class="nav-tabs">
+            <button class="nav-tab active" onclick="switchTab('training')">V1 Training</button>
+            <button class="nav-tab" onclick="switchTab('v2training')">V2 Training</button>
+            <button class="nav-tab" onclick="switchTab('play')">Play vs AI</button>
+            <button class="nav-tab" onclick="switchTab('aivai')">AI vs AI</button>
+            <button class="nav-tab" onclick="switchTab('build')">Build AI</button>
+            <button class="nav-tab" onclick="switchTab('stats')">Game Stats</button>
+        </div>
+        <button class="btn btn-shutdown" onclick="shutdownServer()">Shut Down</button>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- TAB: TRAINING                                                 -->
+    <!-- ============================================================ -->
+    <div id="tab-training" class="tab-content">
+        <!-- Top controls -->
+        <div class="train-controls">
+            <div class="status-area">
+                <span id="status-badge" class="status-badge status-waiting">WAITING</span>
+                <span id="batch-counter" class="batch-counter">Batch 0 / 100,000</span>
+                <span id="elapsed-time" class="elapsed-time"></span>
+            </div>
+            <div class="control-buttons">
+                <select id="resume-select" class="control-select"><option value="">Fresh start</option></select>
+                <button id="btn-start" class="btn btn-start" onclick="startTraining()">Resume Training</button>
+                <button id="btn-pause" class="btn btn-pause hidden" onclick="pauseTraining()">Pause Training</button>
+                <button id="btn-save" class="btn btn-save" onclick="saveTraining()">Save</button>
+                <button class="btn btn-save" onclick="exportLatest()">Export for Play</button>
+                <button id="btn-reset" class="btn btn-reset" onclick="resetTraining()">Reset</button>
+            </div>
+        </div>
+        <div class="progress-bar-track"><div id="progress-bar" class="progress-bar-fill" style="width:0%"></div></div>
+        <div id="training-banner" class="training-banner hidden">
+            <div class="banner-spinner"></div>
+            <div class="banner-text"><strong>Training in progress...</strong><span id="banner-detail">First results appear soon...</span></div>
+        </div>
+
+        <div class="main-layout">
+            <!-- Sidebar -->
+            <div class="sidebar">
+                <div class="panel">
+                    <h3 class="panel-title">Settings</h3>
+                    <div class="settings-form">
+                        <div class="setting-row"><label>Games/Batch</label><input id="set-batch-size" type="number" class="setting-input" value="" min="32" max="4096" step="32"></div>
+                        <div class="setting-row"><label>Entropy Coeff</label><input id="set-entropy" type="number" class="setting-input" value="" min="0.001" max="0.2" step="0.005"></div>
+                        <div class="setting-row"><label>Watchdog</label><label class="toggle"><input id="set-watchdog" type="checkbox"><span class="toggle-slider"></span><span class="toggle-label" id="wd-label">OFF</span></label></div>
+                        <div class="setting-hint">Changes apply on next batch (pause first)</div>
+                        <button class="btn btn-apply" onclick="applySettings()">Apply Settings</button>
+                    </div>
+                </div>
+                <div class="panel">
+                    <h3 class="panel-title">Watchdog</h3>
+                    <div id="watchdog-panel"><div class="wd-item ok"><span class="wd-icon">&#10003;</span><span>No issues detected</span></div></div>
+                </div>
+                <div class="panel">
+                    <h3 class="panel-title">Latest Metrics</h3>
+                    <div class="metrics-grid">
+                        <div class="metric-card"><span class="metric-label">Win Rate (bots)</span><span id="m-winrate" class="metric-value">&mdash;</span></div>
+                        <div class="metric-card"><span class="metric-label">Avg Score</span><span id="m-score" class="metric-value">&mdash;</span></div>
+                        <div class="metric-card"><span class="metric-label">Policy Loss</span><span id="m-ploss" class="metric-value">&mdash;</span></div>
+                        <div class="metric-card"><span class="metric-label">Value Loss</span><span id="m-vloss" class="metric-value">&mdash;</span></div>
+                        <div class="metric-card"><span class="metric-label">Entropy</span><span id="m-entropy" class="metric-value">&mdash;</span></div>
+                        <div class="metric-card full-width"><span class="metric-label">vs Threshold 100</span><span id="m-wr100" class="metric-value">&mdash;</span></div>
+                        <div class="metric-card full-width"><span class="metric-label">vs Threshold 200</span><span id="m-wr200" class="metric-value">&mdash;</span></div>
+                    </div>
+                </div>
+                <div class="panel">
+                    <h3 class="panel-title">Saved Sessions</h3>
+                    <div id="saves-list" class="saves-list"><p class="text-dim">No saved sessions</p></div>
+                    <button class="btn btn-new-session" onclick="newSession()">+ New Session</button>
+                </div>
+                <div class="panel">
+                    <h3 class="panel-title">Checkpoints</h3>
+                    <div id="checkpoint-list" class="checkpoint-list"><p class="text-dim">No checkpoints yet</p></div>
+                    <button class="btn btn-del btn-wide" style="margin-top:8px;font-size:0.72rem;padding:5px;" onclick="deleteAllCheckpoints()">Delete All Checkpoints</button>
+                </div>
+            </div>
+            <!-- Charts -->
+            <div class="charts-area">
+                <div class="panel log-panel"><h3 class="panel-title">Training Log</h3><div id="log-output" class="log-output"><div class="log-line log-dim">Click "Start Training" to begin.</div></div></div>
+                <div class="chart-container"><h3 class="chart-title">Batch Time (seconds)</h3><canvas id="chart-time"></canvas></div>
+                <div class="chart-container"><h3 class="chart-title">Win Rate vs Bots &amp; Avg Score</h3><canvas id="chart-score"></canvas></div>
+                <div class="chart-container"><h3 class="chart-title">Policy Loss</h3><canvas id="chart-ploss"></canvas></div>
+                <div class="chart-container"><h3 class="chart-title">Value Loss &amp; Entropy</h3><canvas id="chart-loss"></canvas></div>
+                <div class="chart-container"><h3 class="chart-title">Win Rate vs Baselines</h3><canvas id="chart-eval"></canvas></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- TAB: V2 TRAINING (MCTS + Neural Network)                       -->
+    <!-- ============================================================ -->
+    <div id="tab-v2training" class="tab-content hidden">
+        <div class="train-controls">
+            <div class="status-area">
+                <span id="v2-status-badge" class="status-badge status-waiting">WAITING</span>
+                <span id="v2-iter-counter" class="batch-counter">Iteration 0</span>
+                <span id="v2-elapsed-time" class="elapsed-time"></span>
+            </div>
+            <div class="control-buttons">
+                <select id="v2-saves-select" class="control-select"><option value="">(no saved sessions)</option></select>
+                <button class="btn btn-save" onclick="v2LoadSelected()">Load</button>
+                <button id="v2-btn-start" class="btn btn-start" onclick="v2StartTraining()">Start Training</button>
+                <button id="v2-btn-stop" class="btn btn-pause hidden" onclick="v2StopTraining()">Pause</button>
+                <button class="btn btn-save" onclick="v2SavePrompt()">Save</button>
+                <button class="btn btn-reset" onclick="v2ResetTraining()">Reset</button>
+            </div>
+        </div>
+
+        <div class="main-layout">
+            <div class="sidebar">
+                <div class="panel">
+                    <h3 class="panel-title">V2 Settings</h3>
+                    <div class="settings-form">
+                        <div class="setting-row"><label>Phase</label>
+                            <select id="v2-set-preset" class="control-select" onchange="v2ApplyPreset()">
+                                <option value="early">Early phase (warmup, ~9 iter/min)</option>
+                                <option value="middle" selected>Middle phase (default, ~0.6 iter/min)</option>
+                                <option value="late">Late phase (refinement, ~0.2 iter/min)</option>
+                                <option value="custom">Custom (manual settings)</option>
+                            </select>
+                        </div>
+                        <div class="setting-row"><label>Workers</label><input id="v2-set-workers" type="number" class="setting-input" value="8" min="1" max="32" title="Parallel self-play processes. Default 8 uses most of a typical 12-core laptop."></div>
+                        <div class="setting-row"><label>Sims/Move</label><input id="v2-set-sims" type="number" class="setting-input" value="50" min="5" max="800" title="MCTS simulations per AI decision. Floor for useful learning is ~15. Bank's 2-action space converges fast — 50 is solid."></div>
+                        <div class="setting-row"><label>Games/Iter</label><input id="v2-set-games-per-iter" type="number" class="setting-input" value="20" min="1" max="500" title="Self-play games per iteration. Auto-links with Steps/Iter at a 2.5× ratio. Floor is ~8."></div>
+                        <div class="setting-row"><label>Steps/Iter</label><input id="v2-set-steps-per-iter" type="number" class="setting-input" value="50" min="1" max="1000" title="Training updates per iteration. Auto-links with Games/Iter at a 2.5× ratio. Set both at once via Preset, or edit either to keep them proportional."></div>
+                        <div class="setting-row"><label>Batch Size</label><input id="v2-set-batch" type="number" class="setting-input" value="256" min="32" max="4096" step="32"></div>
+                        <div class="setting-row"><label>Max Iter</label><input id="v2-set-max-iter" type="number" class="setting-input" value="1000000" min="1"></div>
+                        <div class="setting-row"><label>Eval Interval</label><input id="v2-set-eval-interval" type="number" class="setting-input" value="10" min="0" max="1000" title="Run evaluation every N iterations. Set to 0 to disable eval entirely."></div>
+                        <div class="setting-row"><label>Eval Games</label><input id="v2-set-eval-games" type="number" class="setting-input" value="3" min="1" max="200" title="Games per bot during eval. Lower = faster."></div>
+                        <div class="setting-hint">Aggressive = fast iterations for warmup. Balanced = production training. Quality = late-stage refinement. Settings persist across reloads.</div>
+                    </div>
+                </div>
+                <div class="panel">
+                    <h3 class="panel-title">V2 Checkpoints</h3>
+                    <div id="v2-checkpoints-list" class="checkpoint-list"><div class="muted">(none yet)</div></div>
+                </div>
+            </div>
+
+            <div class="charts-area">
+                <div class="panel log-panel"><h3 class="panel-title">Training Log</h3><div id="v2-log" class="log-output"><div class="log-line log-dim">Click "Start Training" to begin.</div></div></div>
+                <div class="panel"><h3 class="panel-title">Latest Evaluation Breakdown</h3><div id="v2-eval-breakdown" class="text-dim">Eval runs every 10 iterations.</div></div>
+                <div class="chart-container"><div class="chart-with-hint">
+                    <div class="chart-main"><h3 class="chart-title">Loss</h3><canvas id="v2-chart-loss"></canvas></div>
+                    <div class="chart-hint">
+                        <h4>If improving</h4>
+                        <p>All 3 lines slope <b>downward</b>.</p>
+                        <p>Value loss falls first (~0.7 → 0.4). Policy loss follows (~0.69 → 0.5+).</p>
+                        <p>Plateau = current phase has reached its ceiling. Move to next phase.</p>
+                    </div>
+                </div></div>
+                <div class="chart-container"><div class="chart-with-hint">
+                    <div class="chart-main"><h3 class="chart-title">MCTS Visit Entropy</h3><canvas id="v2-chart-entropy"></canvas></div>
+                    <div class="chart-hint">
+                        <h4>If improving</h4>
+                        <p>Starts high (~0.69 = max for 2 actions), drifts <b>downward</b>.</p>
+                        <p>0.3-0.6 = healthy converged AI making confident calls.</p>
+                        <p>Near 0 = AI always picks same action everywhere — bad (policy collapse).</p>
+                    </div>
+                </div></div>
+                <div class="chart-container"><div class="chart-with-hint">
+                    <div class="chart-main"><h3 class="chart-title">Eval Win Rate (per player count)</h3><canvas id="v2-chart-eval"></canvas></div>
+                    <div class="chart-hint">
+                        <h4>If improving</h4>
+                        <p>Each colored line slopes <b>upward</b> on its own.</p>
+                        <p>Expect 2p &gt; 3p &gt; 4p &gt; 5p &gt; 6p (harder to win with more players).</p>
+                        <p>Gray "overall" line = average across all panels (legacy data).</p>
+                        <p>Colored lines appear gradually as the eval rotation reaches each player count.</p>
+                    </div>
+                </div></div>
+                <div class="chart-container"><div class="chart-with-hint">
+                    <div class="chart-main"><h3 class="chart-title">Throughput (games/min)</h3><canvas id="v2-chart-throughput"></canvas></div>
+                    <div class="chart-hint">
+                        <h4>If healthy</h4>
+                        <p>Roughly <b>flat</b> with ~30% noise from variable player counts per game.</p>
+                        <p>Slow drift downward = AI getting smarter (longer rounds).</p>
+                        <p>Sudden 2× drop = thermal throttle, OneDrive sync, or system load.</p>
+                    </div>
+                </div></div>
+                <div class="panel"><h3 class="panel-title">Phase Time Estimates</h3><div id="v2-phase-estimates" class="text-dim">Start training to see estimates based on actual games/min.</div></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- TAB: PLAY VS AI                                               -->
+    <!-- ============================================================ -->
+    <div id="tab-play" class="tab-content hidden">
+        <!-- Setup -->
+        <div id="play-setup" class="play-setup">
+            <div class="play-setup-box">
+                <h2>Play vs AI</h2>
+                <div class="play-form">
+                    <div class="setting-row"><label>AI Type</label>
+                        <select id="play-ai-type" class="control-select" onchange="playOnAITypeChange()">
+                            <option value="v1" selected>V1 (PPO, browser-side fast)</option>
+                            <option value="v2">V2 (MCTS, server-side, ~1s/move)</option>
+                            <option value="custom">Build AI (your strategy)</option>
+                        </select>
+                    </div>
+                    <div class="setting-row" id="play-row-v1"><label>V1 Checkpoint</label><select id="play-checkpoint" class="control-select" onchange="playLoadModel(this.value)"></select></div>
+                    <div class="setting-row hidden" id="play-row-v2"><label>V2 Checkpoint</label><select id="play-v2-checkpoint" class="control-select"></select></div>
+                    <div class="setting-row hidden" id="play-row-v2-sims"><label>V2 Sims/Move</label><select id="play-v2-sims" class="control-select"><option value="50">50 (fast)</option><option value="100" selected>100</option><option value="200">200 (quality)</option><option value="400">400 (max)</option></select></div>
+                    <div class="setting-row hidden" id="play-row-custom"><label>Build AI</label><select id="play-custom-name" class="control-select"></select></div>
+                    <div class="setting-row"><label>Human Players</label>
+                        <select id="play-num-humans" class="control-select">
+                            <option value="1" selected>1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option>
+                        </select>
+                    </div>
+                    <div class="setting-row"><label>AI Opponents</label>
+                        <select id="play-num-ai" class="control-select">
+                            <option value="1">1</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="5">5</option>
+                        </select>
+                    </div>
+                    <div class="setting-row"><label>Animate Rolls</label><label class="toggle"><input id="play-animate-toggle" type="checkbox" checked><span class="toggle-slider"></span><span class="toggle-label">ON</span></label></div>
+                    <p id="play-model-status" class="text-dim">Select a checkpoint...</p>
+                    <button id="play-start-btn" class="btn btn-start btn-wide" onclick="playStart()" disabled>Start Game</button>
+                </div>
+                <div class="play-rules">
+                    <h4>Quick Rules</h4>
+                    <ul>
+                        <li>10 rounds. Rolls 1-3 have immunity (auto-rolled).</li>
+                        <li><b>Bank</b> to lock the pot. <b>Continue</b> to risk it.</li>
+                        <li>After immunity: 7 wipes pot, doubles double pot.</li>
+                        <li>Keyboard: <kbd>B</kbd> bank, <kbd>C</kbd> continue, <kbd>Enter</kbd> next round.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game area -->
+        <div id="play-area" class="play-game hidden">
+            <div class="play-top">
+                <span>Round <b id="play-round">1</b>/10</span>
+                <span>Roll <b id="play-roll">1</b></span>
+                <span id="play-imm" class="play-imm imm-on">IMMUNITY</span>
+                <button class="btn btn-reset btn-sm" onclick="playBackToSetup()">New Game</button>
+            </div>
+            <div class="play-main">
+                <div class="play-side">
+                    <h4>Scores</h4>
+                    <div id="play-scores"></div>
+                </div>
+                <div class="play-center">
+                    <div class="play-dice">
+                        <div id="play-d1" class="play-die dv-1"><span class="pip"></span></div>
+                        <span id="play-dice-sum" class="play-dice-sum">= 2</span>
+                        <div id="play-d2" class="play-die dv-1"><span class="pip"></span></div>
+                    </div>
+                    <div id="play-tag" class="play-tag tag-normal">+2</div>
+                    <div class="play-pot"><span class="play-pot-label">POT</span><span id="play-pot-val" class="play-pot-val">0</span></div>
+                    <div id="play-turn-label" class="play-turn-label hidden"></div>
+                    <div id="play-buttons" class="play-btns hidden">
+                        <button class="btn btn-bank" onclick="playBank()">BANK</button>
+                        <button class="btn btn-cont" onclick="playContinue()">CONTINUE</button>
+                    </div>
+                    <div id="play-next-round" class="hidden">
+                        <button class="btn btn-next" onclick="playNextRound()">NEXT ROUND</button>
+                    </div>
+                </div>
+                <div class="play-side play-log-side">
+                    <h4>Log</h4>
+                    <div id="play-log" class="play-log"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game over -->
+        <div id="play-gameover" class="play-gameover hidden">
+            <div class="go-box">
+                <h2 id="play-go-title" class="go-title go-win">You Win!</h2>
+                <div id="play-go-scores"></div>
+                <button class="btn btn-start btn-wide" onclick="playBackToSetup()">Play Again</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- TAB: AI VS AI                                                 -->
+    <!-- ============================================================ -->
+    <div id="tab-aivai" class="tab-content hidden">
+        <div class="aivai-container">
+            <h2>AI vs AI</h2>
+            <p class="text-dim">Round-robin tournament. Mix V1 networks, V2 networks (with MCTS), and Build AI strategies.</p>
+            <div class="aivai-form">
+                <div class="setting-row"><label>Players per game</label><select id="ava-num-players" class="control-select"><option>2</option><option>3</option><option selected>4</option><option>5</option><option>6</option></select></div>
+                <div class="setting-row"><label>Games per matchup</label><input id="ava-games-per-matchup" type="number" class="setting-input" value="30" min="1" max="2000" step="10"></div>
+                <div class="setting-row" style="gap: 6px;">
+                    <button class="btn btn-save" style="font-size:0.78rem;padding:6px 10px;" onclick="ava2AddCompetitor('v1')">+ V1 Checkpoint</button>
+                    <button class="btn btn-save" style="font-size:0.78rem;padding:6px 10px;" onclick="ava2AddCompetitor('v2')">+ V2 Checkpoint</button>
+                    <button class="btn btn-save" style="font-size:0.78rem;padding:6px 10px;" onclick="ava2AddCompetitor('custom')">+ Build AI</button>
+                </div>
+                <div id="ava2-competitors" class="ava2-competitors"></div>
+                <button id="ava-run-btn" class="btn btn-start btn-wide" onclick="ava2RunTournament()">Run Tournament</button>
+            </div>
+            <div id="ava-status" class="ava-status hidden">
+                <div class="banner-spinner"></div>
+                <span>Running tournament... v2 MCTS makes this slow. Patience.</span>
+            </div>
+            <div id="ava-results" class="ava-results hidden">
+                <h3>Results</h3>
+                <div id="ava-results-body"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- TAB: BUILD AI                                                 -->
+    <!-- ============================================================ -->
+    <div id="tab-build" class="tab-content hidden">
+        <div class="build-container">
+            <!-- AI List (left sidebar) -->
+            <div class="build-list-panel">
+                <h3>My AIs</h3>
+                <div id="build-ai-list" class="build-ai-list"></div>
+                <button class="btn btn-new-session" onclick="buildNewAI()">+ New AI</button>
+            </div>
+
+            <!-- Editor (center) -->
+            <div class="build-left">
+                <div id="build-editing-label" class="build-editing-label hidden">
+                    Editing: <span id="build-editing-name"></span>
+                </div>
+                <div class="build-editor-wrap">
+                    <textarea id="build-code" class="build-editor" spellcheck="false" placeholder="Select an AI from the list or create a new one..."></textarea>
+                </div>
+                <div class="build-actions">
+                    <div class="setting-row"><label>Test Games</label><input id="build-num-games" type="number" class="setting-input" value="1000" min="10" max="50000" step="100"></div>
+                    <button class="btn btn-start" onclick="buildTest()">Test AI</button>
+                    <button id="build-save-btn" class="btn btn-save" onclick="buildSaveCurrent()">Save</button>
+                </div>
+                <div id="build-vars-panel" class="build-vars-panel hidden">
+                    <h4>Variables</h4>
+                    <div id="build-vars-list"></div>
+                </div>
+                <div id="build-error" class="build-error hidden"></div>
+                <div id="build-results" class="build-results hidden"></div>
+
+                <!-- Compete section -->
+                <div class="build-compete">
+                    <h3>Compete</h3>
+                    <p class="text-dim">Select AIs to compete head-to-head.</p>
+                    <div id="compete-filters" class="compete-filters"></div>
+                    <div class="compete-btns"><button class="btn btn-ctl" onclick="competeSelectAll()">All</button><button class="btn btn-ctl" onclick="competeSelectNone()">None</button><span id="compete-count" class="compete-count">0 selected</span></div>
+                    <div id="compete-select" class="compete-select"></div>
+                    <div class="build-actions">
+                        <div class="setting-row"><label>Games per AI</label><input id="compete-num-games" type="number" class="setting-input" value="5000" min="10" max="50000" step="100"></div>
+                        <div class="setting-row"><label>Players/game</label><input id="compete-min-players" type="number" class="setting-input" value="2" min="2" max="8" step="1" style="width:50px"><span class="text-dim" style="margin:0 4px;">to</span><input id="compete-max-players" type="number" class="setting-input" value="8" min="2" max="8" step="1" style="width:50px"></div>
+                        <div class="setting-row" id="nearby-row" style="display:none;"><label>Nearby Play</label>
+                            <label class="toggle"><input id="compete-nearby" type="checkbox" onchange="this.nextElementSibling.nextElementSibling.textContent=this.checked?'ON':'OFF';document.getElementById('nearby-pct-row').style.display=this.checked?'flex':'none'"><span class="toggle-slider"></span><span class="toggle-label">OFF</span></label>
+                        </div>
+                        <div class="setting-row" id="nearby-pct-row" style="display:none;"><label>Range %</label><input id="compete-nearby-pct" type="number" class="setting-input" value="20" min="5" max="100" step="5" style="width:60px"><span class="text-dim" style="font-size:0.72rem;">%</span></div>
+                        <button class="btn btn-start" onclick="buildCompete()">Run Tournament</button>
+                    </div>
+                    <div id="compete-status" class="ava-status hidden"><div class="banner-spinner"></div><span id="compete-status-text">Running...</span></div>
+                    <div id="compete-results" class="build-results hidden">
+                        <div class="compete-col-toggles">
+                            <span class="text-dim" style="font-size:0.72rem;margin-right:6px;">Show:</span>
+                            <button class="btn btn-ctl active" id="col-games" onclick="competeSetCol('games')">Games Played</button>
+                            <button class="btn btn-ctl" id="col-ppgk" onclick="competeSetCol('ppgk')">Pts/Game per #Players</button>
+                        </div>
+                        <div id="compete-table-wrap"></div>
+                    </div>
+                    <div id="compete-chart-wrap" class="hidden">
+                        <div class="chart-header">
+                            <h3 class="chart-title">Points Per Game by Player Count</h3>
+                            <button id="compete-top5-btn" class="btn btn-ctl active" onclick="competeToggleTop5()">Only Top 5</button>
+                        </div>
+                        <div class="chart-container" style="height:500px;"><canvas id="chart-compete"></canvas></div>
+                    </div>
+                    <div id="compete-var-chart-wrap" class="hidden">
+                        <div class="chart-header">
+                            <h3 class="chart-title" id="var-chart-title">Pts/Game by Variable</h3>
+                            <div class="compete-var-k-select" id="var-k-select"></div>
+                        </div>
+                        <div class="chart-container" style="height:400px;"><canvas id="chart-compete-var"></canvas></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Variables reference (right) -->
+            <div class="build-right">
+                <h3>Available Variables</h3>
+                <div class="build-vars">
+                    <div class="bv-section">
+                        <h4>Game State</h4>
+                        <div class="bv"><code>pot</code> <span>Current running total</span></div>
+                        <div class="bv"><code>round</code> <span>Round number (1-10)</span></div>
+                        <div class="bv"><code>roll</code> <span>Current roll number</span></div>
+                        <div class="bv"><code>players_in</code> <span>Players still in this round</span></div>
+                        <div class="bv"><code>num_players</code> <span>Total players in the game</span></div>
+                    </div>
+                    <div class="bv-section">
+                        <h4>Your Score</h4>
+                        <div class="bv"><code>my_score</code> <span>Your banked score</span></div>
+                    </div>
+                    <div class="bv-section">
+                        <h4>Opponent Scores (sorted by rank)</h4>
+                        <div class="bv"><code>p1_score</code> <span>1st place score</span></div>
+                        <div class="bv"><code>p2_score</code> <span>2nd place score</span></div>
+                        <div class="bv"><code>p3_score</code> <span>3rd place score</span></div>
+                        <div class="bv"><code>p4_score</code> <span>4th place score</span></div>
+                        <div class="bv"><code>p5_score</code> <span>5th place score</span></div>
+                    </div>
+                    <div class="bv-section">
+                        <h4>Opponent Banking Status</h4>
+                        <div class="bv"><code>p1_banked</code> <span>Has 1st place banked? (0/1)</span></div>
+                        <div class="bv"><code>p2_banked</code> <span>Has 2nd place banked? (0/1)</span></div>
+                        <div class="bv"><code>p3_banked</code> <span>Has 3rd place banked? (0/1)</span></div>
+                        <div class="bv"><code>p4_banked</code> <span>Has 4th place banked? (0/1)</span></div>
+                        <div class="bv"><code>p5_banked</code> <span>Has 5th place banked? (0/1)</span></div>
+                    </div>
+                    <div class="bv-section">
+                        <h4>Syntax</h4>
+                        <div class="bv"><code>if</code> / <code>elif</code> / <code>else</code></div>
+                        <div class="bv"><code>and</code> / <code>or</code> / <code>not</code></div>
+                        <div class="bv"><code>>=</code> <code><=</code> <code>==</code> <code>!=</code> <code>&gt;</code> <code>&lt;</code></div>
+                        <div class="bv"><code>for X in range(N):</code></div>
+                        <div class="bv"><code>for X in range(A, B):</code></div>
+                        <div class="bv"><code>for X in range(A, B, step):</code></div>
+                        <div class="bv"><code>X = value</code> <span>Variable assignment</span></div>
+                        <div class="bv"><code>bank</code> <span>Action: bank</span></div>
+                        <div class="bv"><code>continue</code> <span>Action: continue</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- TAB: GAME STATS                                               -->
+    <!-- ============================================================ -->
+    <div id="tab-stats" class="tab-content hidden">
+        <div class="stats-container">
+            <h2>Game Statistics</h2>
+            <p class="text-dim">Simulate games with no players to explore dice probability distributions.</p>
+            <div class="stats-controls">
+                <div class="setting-row"><label>Games to simulate</label><input id="stats-num-games" type="number" class="setting-input" value="10000" min="100" max="1000000" step="1000"></div>
+                <button id="stats-run-btn" class="btn btn-start" onclick="runStats()">Simulate</button>
+            </div>
+            <div id="stats-status" class="ava-status hidden">
+                <div class="banner-spinner"></div>
+                <span id="stats-status-text">Simulating...</span>
+            </div>
+            <div id="stats-results" class="hidden">
+                <div class="stats-summary" id="stats-summary"></div>
+
+                <!-- Main distribution charts -->
+                <h3 class="stats-section-title">Game Distributions</h3>
+
+                <div class="stats-chart-row">
+                    <div class="stats-chart-block">
+                        <div class="chart-header"><h3 class="chart-title">Max Points Per Game (perfect banking)</h3><div class="chart-ctrls" id="ctrl-max-points"></div></div>
+                        <div class="chart-container stats-chart"><canvas id="chart-max-points"></canvas></div>
+                    </div>
+                    <div class="stats-chart-block">
+                        <div class="chart-header"><h3 class="chart-title">Max Points Per Round (perfect banking)</h3><div class="chart-ctrls" id="ctrl-max-round"></div></div>
+                        <div class="chart-container stats-chart"><canvas id="chart-max-round"></canvas></div>
+                    </div>
+                </div>
+                <div class="stats-chart-block">
+                    <div class="chart-header"><h3 class="chart-title">Highest Scoring Round Per Game</h3><div class="chart-ctrls" id="ctrl-best-round"></div></div>
+                    <div class="chart-container stats-chart"><canvas id="chart-best-round"></canvas></div>
+                </div>
+
+                <div class="stats-chart-row">
+                    <div class="stats-chart-block">
+                        <div class="chart-header"><h3 class="chart-title">Roll # When 7 Hit (per round)</h3><div class="chart-ctrls" id="ctrl-rolls7"></div></div>
+                        <div class="chart-container stats-chart"><canvas id="chart-rolls-before-7"></canvas></div>
+                    </div>
+                    <div class="stats-chart-block">
+                        <div class="chart-header"><h3 class="chart-title">Survival Rate (% chance no 7 yet)</h3></div>
+                        <div class="chart-container stats-chart"><canvas id="chart-survival"></canvas></div>
+                    </div>
+                </div>
+                <div class="stats-chart-row">
+                    <div class="stats-chart-block">
+                        <div class="chart-header"><h3 class="chart-title">Avg Pot by Roll #</h3></div>
+                        <div class="chart-container stats-chart"><canvas id="chart-avg-pot"></canvas></div>
+                    </div>
+                    <div class="stats-chart-block">
+                        <div class="chart-header"><h3 class="chart-title">Expected Points by Roll #</h3></div>
+                        <div class="chart-container stats-chart"><canvas id="chart-expected-pts"></canvas></div>
+                    </div>
+                </div>
+                <div class="stats-chart-block">
+                    <div class="chart-header"><h3 class="chart-title">P(Round >= X Points) &amp; Expected Points</h3></div>
+                    <div class="chart-container stats-chart"><canvas id="chart-point-survival"></canvas></div>
+                </div>
+                <div class="stats-chart-row">
+                    <div class="stats-chart-block">
+                        <div class="chart-header"><h3 class="chart-title">Points After Immunity (per round)</h3><div class="chart-ctrls" id="ctrl-imm-points"></div></div>
+                        <div class="chart-container stats-chart"><canvas id="chart-imm-points"></canvas></div>
+                    </div>
+                </div>
+
+                <!-- Dice statistics -->
+                <h3 class="stats-section-title">Dice Statistics</h3>
+                <div class="stats-chart-row">
+                    <div class="stats-chart-block">
+                        <div class="chart-container stats-chart"><h3 class="chart-title">Individual Die Values</h3><canvas id="chart-single-die"></canvas></div>
+                    </div>
+                    <div class="stats-chart-block">
+                        <div class="chart-container stats-chart"><h3 class="chart-title">Dice Total (two dice combined)</h3><canvas id="chart-dice-total"></canvas></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="dashboard.js"></script>
+    <script src="play.js?v=20260331g"></script>
+    <script src="stats.js"></script>
+    <script src="build.js"></script>
+    <script src="train_v2.js?v=2"></script>
+    <script src="aivai_combined.js?v=1"></script>
+    <script src="play_unified.js?v=1"></script>
+    <script>
+    // Shutdown
+    async function shutdownServer() {
+        try {
+            await fetch("/api/shutdown", { method: "POST", headers: {"Content-Type":"application/json"}, body: "{}" });
+        } catch(e) {}
+        document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#8b8fa3;font-family:sans-serif;font-size:1.2rem;">Server shut down. You can close this tab.</div>';
+    }
+
+    // Tab switching
+    function switchTab(name) {
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.add('hidden'));
+        document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+        document.getElementById('tab-' + name).classList.remove('hidden');
+        event.target.classList.add('active');
+        if (name === 'play') playLoadCheckpoints();
+        if (name === 'aivai') avaLoadCheckpoints();
+    }
+
+    // AI vs AI
+    async function avaLoadCheckpoints() {
+        try {
+            const resp = await fetch("/api/checkpoints");
+            if (!resp.ok) return;
+            const data = await resp.json();
+            const opts = (data.checkpoints||[]).map(cp => `<option value="${cp.filename}">${cp.filename}</option>`).join("");
+            document.getElementById("ava-model1").innerHTML = opts || '<option>No checkpoints</option>';
+            document.getElementById("ava-model2").innerHTML = opts || '<option>No checkpoints</option>';
+        } catch(e) {}
+    }
+
+    async function runAiVsAi() {
+        const m1 = document.getElementById("ava-model1").value;
+        const m2 = document.getElementById("ava-model2").value;
+        const games = parseInt(document.getElementById("ava-games").value);
+        if (!m1 || !m2) { alert("Select both models"); return; }
+
+        document.getElementById("ava-run-btn").disabled = true;
+        document.getElementById("ava-status").classList.remove("hidden");
+        document.getElementById("ava-results").classList.add("hidden");
+
+        try {
+            const resp = await fetch("/api/ai_vs_ai", {
+                method: "POST",
+                headers: {"Content-Type":"application/json"},
+                body: JSON.stringify({model1: m1, model2: m2, games}),
+            });
+            const text = await resp.text();
+            let data;
+            try { data = JSON.parse(text); } catch { data = {error: text}; }
+            if (data.error) { alert("Error: " + data.error); return; }
+
+            const body = document.getElementById("ava-results-body");
+            body.innerHTML = `
+                <div class="ava-matchup">
+                    <div class="ava-player ava-p1">
+                        <div class="ava-pname">${data.model1_name}</div>
+                        <div class="ava-pbatch">Batch ${data.model1_batch}</div>
+                        <div class="ava-pstat">${data.model1_wins} wins (${(data.model1_win_rate*100).toFixed(1)}%)</div>
+                        <div class="ava-pscore">Avg: ${data.model1_avg_score.toFixed(0)}</div>
+                    </div>
+                    <div class="ava-vs">VS</div>
+                    <div class="ava-player ava-p2">
+                        <div class="ava-pname">${data.model2_name}</div>
+                        <div class="ava-pbatch">Batch ${data.model2_batch}</div>
+                        <div class="ava-pstat">${data.model2_wins} wins (${(data.model2_win_rate*100).toFixed(1)}%)</div>
+                        <div class="ava-pscore">Avg: ${data.model2_avg_score.toFixed(0)}</div>
+                    </div>
+                </div>
+                <div class="ava-ties">Ties: ${data.ties} &middot; ${games} games played</div>
+            `;
+            document.getElementById("ava-results").classList.remove("hidden");
+        } catch(e) { alert("Failed: " + e); }
+        finally {
+            document.getElementById("ava-run-btn").disabled = false;
+            document.getElementById("ava-status").classList.add("hidden");
+        }
+    }
+    </script>
+</body>
+</html>

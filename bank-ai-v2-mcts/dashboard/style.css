@@ -1,0 +1,264 @@
+/* Bank AI v2 dashboard — base styling */
+
+:root {
+    --bg: #0e1218;
+    --card: #161c25;
+    --card-2: #1c2330;
+    --border: #2a3340;
+    --text: #e6edf3;
+    --text-dim: #98a2b3;
+    --primary: #4a90ff;
+    --primary-hover: #2972eb;
+    --danger: #e85d63;
+    --secondary: #5a677a;
+    --success: #4cb87b;
+    --warning: #e6a23c;
+    --chart-grid: #2a3340;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px;
+}
+
+.topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 24px;
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+}
+.brand-title { font-size: 18px; font-weight: 600; }
+.brand-subtitle { color: var(--text-dim); margin-left: 8px; font-size: 13px; }
+
+.status-badge {
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+    background: var(--card-2);
+    color: var(--text-dim);
+}
+.status-running { background: rgba(76, 184, 123, 0.15); color: var(--success); }
+.status-halted { background: rgba(232, 93, 99, 0.18); color: var(--danger); }
+.status-error { background: rgba(232, 93, 99, 0.18); color: var(--danger); }
+.status-idle { background: var(--card-2); color: var(--text-dim); }
+
+.tabs {
+    display: flex;
+    gap: 4px;
+    padding: 0 24px;
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+}
+.tab {
+    background: transparent;
+    color: var(--text-dim);
+    border: none;
+    padding: 12px 20px;
+    cursor: pointer;
+    font-size: 14px;
+    border-bottom: 2px solid transparent;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--text); border-bottom-color: var(--primary); }
+
+main { padding: 20px; max-width: 1400px; margin: 0 auto; }
+
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+.card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 16px;
+}
+.card h2 { margin: 0 0 12px 0; font-size: 16px; font-weight: 600; }
+.card h3 { margin: 0 0 8px 0; font-size: 14px; font-weight: 600; color: var(--text-dim); }
+
+.controls-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: end;
+    margin-bottom: 8px;
+}
+.controls-row label {
+    display: flex;
+    flex-direction: column;
+    font-size: 12px;
+    color: var(--text-dim);
+    gap: 4px;
+}
+.controls-row input,
+.controls-row select {
+    background: var(--card-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 8px;
+    color: var(--text);
+    font-size: 13px;
+    min-width: 100px;
+}
+
+button {
+    border: none;
+    border-radius: 4px;
+    padding: 8px 14px;
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: 500;
+}
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+button.primary { background: var(--primary); color: white; }
+button.primary:hover:not(:disabled) { background: var(--primary-hover); }
+button.secondary { background: var(--secondary); color: var(--text); }
+button.secondary:hover:not(:disabled) { background: #6b7989; }
+button.danger { background: var(--danger); color: white; }
+button.danger:hover:not(:disabled) { background: #c84249; }
+
+.muted { color: var(--text-dim); font-size: 12px; }
+
+.charts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+    gap: 16px;
+    margin-bottom: 16px;
+}
+.chart-card {
+    background: var(--card-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+}
+canvas { display: block; width: 100% !important; max-width: 100%; }
+
+.log {
+    background: var(--card-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px;
+    margin: 0;
+    color: var(--text-dim);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    overflow: auto;
+    max-height: 280px;
+    white-space: pre;
+}
+
+.code-editor {
+    width: 100%;
+    min-height: 200px;
+    background: var(--card-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    padding: 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px;
+    resize: vertical;
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.data-table th, .data-table td {
+    padding: 6px 10px;
+    text-align: right;
+    border-bottom: 1px solid var(--border);
+}
+.data-table th { color: var(--text-dim); font-weight: 500; text-align: left; }
+.data-table td:first-child { text-align: left; }
+
+/* ----- play board ----- */
+
+.play-board { display: grid; gap: 12px; }
+.pot-banner {
+    background: var(--card-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    text-align: center;
+}
+.pot-value { font-size: 36px; font-weight: 700; color: var(--primary); }
+.pot-label { color: var(--text-dim); margin-top: 4px; }
+.dice-display { font-size: 24px; margin-top: 8px; }
+
+.players-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 8px;
+}
+.player-card {
+    background: var(--card-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px;
+    text-align: center;
+}
+.player-card.you { border-color: var(--primary); }
+.player-card.banked { opacity: 0.55; }
+.player-card .pname { font-size: 12px; color: var(--text-dim); }
+.player-card .pscore { font-size: 22px; font-weight: 600; }
+.player-card .pstatus { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+.player-card.you .pname { color: var(--primary); }
+
+.history-block {
+    margin-top: 12px;
+    background: var(--card-2);
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    padding: 10px;
+    max-height: 200px;
+    overflow: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    color: var(--text-dim);
+}
+
+/* ----- tournament ----- */
+
+.competitors-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 8px;
+    margin: 12px 0;
+}
+.competitor-card {
+    background: var(--card-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 12px;
+}
+.competitor-card input,
+.competitor-card select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 3px;
+    padding: 4px;
+    font-size: 12px;
+}
+.competitor-card .removebtn {
+    background: transparent;
+    color: var(--danger);
+    border: 1px solid var(--danger);
+    padding: 2px 6px;
+    font-size: 11px;
+    align-self: flex-start;
+}

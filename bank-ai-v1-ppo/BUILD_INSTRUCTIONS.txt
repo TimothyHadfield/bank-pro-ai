@@ -1,0 +1,273 @@
+PROJECT: Bank AI v1 — A reinforcement learning agent trained via PPO self-play to play the dice game "Bank" at a near-optimal level.
+
+NOTE: These are the original build instructions for the v1 (PPO) implementation. The current v2 effort is in ../bank-ai-v2-mcts/ and uses MCTS instead. For the universal game rules, see ../bank-ai-v2-mcts/GAME_RULES.md.
+
+IMPORTANT: Build this project ONE FILE AT A TIME in the exact order specified below. After each file, test it before moving to the next. Do not scaffold the entire project at once. Do not create placeholder files. Build, test, confirm, then move on.
+
+============================
+PROJECT STRUCTURE
+============================
+
+bank-ai/
+├── game/
+│   ├── __init__.py
+│   └── environment.py       # Game rules as a simulator
+├── network/
+│   ├── __init__.py
+│   └── model.py             # Neural network (policy + value heads)
+├── training/
+│   ├── __init__.py
+│   ├── trainer.py           # PPO training loop
+│   ├── self_play.py         # Runs batches of games using current network
+│   └── watchdog.py          # Auto-halt logic for broken training
+├── evaluation/
+│   ├── __init__.py
+│   ├── play_vs_ai.py        # Human vs AI in the terminal
+│   ├── ai_vs_ai.py          # Pit two checkpoints against each other
+│   └── tournament.py        # Plug in external AIs, run round-robins
+├── monitoring/
+│   ├── __init__.py
+│   └── logger.py            # Tracks metrics, writes to TensorBoard
+├── models/                  # Saved checkpoint .pt files
+├── runs/                    # TensorBoard log files
+├── config.py                # All hyperparameters in one place
+├── train.py                 # Entry point: run this to start training
+└── requirements.txt         # torch, numpy, tensorboard, matplotlib
+
+============================
+BUILD ORDER (STRICT)
+============================
+
+Phase 1: environment.py
+Phase 2: model.py
+Phase 3: config.py
+Phase 4: self_play.py
+Phase 5: logger.py and watchdog.py
+Phase 6: trainer.py and train.py
+Phase 7: play_vs_ai.py
+Phase 8: ai_vs_ai.py and tournament.py
+
+Details for each phase below.
+
+============================
+PHASE 1: environment.py
+============================
+
+This is the most critical file. If the game logic is wrong, the AI learns a broken game.
+
+Create a BankGame class that simulates the full game. It should support 2-6 players (configurable).
+
+Key methods:
+- reset() -> initial state. Starts a new 10-round game.
+- get_state(player_id) -> returns the state from that player's perspective as a dictionary or flat numpy array.
+- step(actions: dict) -> takes a dictionary mapping player_id to "bank" or "continue" for each player still in the round. Rolls dice (if this is the start of a decision point), applies the result, processes banking, and returns the new state, whether the round/game ended, and any info.
+
+CRITICAL: The environment must handle the full round loop internally. The external interface should be:
+1. Call step() when a decision is needed (after a roll that didn't bust)
+2. The environment handles rolling, applying results, checking immunity, and determining if the round ended due to a 7
+
+The state returned for each player should include:
+- current_pot: the shared running total for this round
+- roll_number: which roll of the round we're on (1-indexed)
+- round_number: which round of the game (1-10)
+- my_banked_score: this player's permanent score
+- opponent_banked_scores: list of all other players' permanent scores
+- players_still_in: how many players haven't banked this round
+- immunity_active: boolean (True if roll_number <= 3)
+
+TESTING FOR PHASE 1: After building, write a short test script that:
+- Plays a full game with random bank/continue decisions
+- Prints each roll, the pot, and all player decisions/scores
+- Verifies: immunity works correctly for rolls 1-3 (7 adds 70, doubles just sum)
+- Verifies: after immunity, 7 wipes pot and ends round
+- Verifies: after immunity, doubles multiply pot by 2
+- Verifies: banking gives the player the current pot value
+- Verifies: the pot persists at its current value after a player banks
+- Verifies: game ends after 10 rounds
+Run this test and confirm all outputs are correct before moving on.
+
+============================
+PHASE 2: model.py
+============================
+
+Define a BankNetwork class (nn.Module) with:
+- Input: state vector (size determined by environment's state)
+- Two hidden layers, 128 neurons each, ReLU activation
+- Two output heads:
+  - Policy head: outputs 2 logits (bank, continue), apply softmax to get probabilities
+  - Value head: outputs 1 scalar (estimated expected reward from this state)
+
+Also include:
+- A method to select an action given a state (sample from policy distribution during training, argmax during evaluation)
+- A method to evaluate: given a batch of states and actions, return log probabilities of those actions, entropy of the policy, and value estimates
+
+TESTING FOR PHASE 2: Create a dummy state vector, pass it through the network, verify the output shapes are correct (policy should be a probability distribution summing to 1, value should be a single number). Verify that different random states produce different outputs.
+
+============================
+PHASE 3: config.py
+============================
+
+A single file containing all tunable hyperparameters as a dictionary or dataclass:
+- num_players: 4 (default)
+- num_rounds: 10
+- hidden_size: 128
+- learning_rate: 3e-4
+- gamma (discount factor): 0.99
+- gae_lambda: 0.95
+- ppo_clip: 0.2
+- ppo_epochs: 4
+- batch_size: 1024 (number of games per training batch)
+- max_training_batches: 100000
+- checkpoint_interval: 100 (save every N batches)
+- eval_interval: 50 (run evaluation every N batches)
+- entropy_coefficient: 0.01
+- value_loss_coefficient: 0.5
+- max_grad_norm: 0.5
+- reward_win_bonus: 2.0
+- reward_score_scale: 1000.0 (normalize scores by dividing by this)
+- watchdog settings (thresholds for auto-halt)
+
+This file should be the ONLY place hyperparameters are defined. Everything else imports from here.
+
+============================
+PHASE 4: self_play.py
+============================
+
+A function that takes the current network and plays a batch of games using self-play. All players use the same network but make independent decisions based on their own state.
+
+For each game:
+1. Reset the environment
+2. At each decision point, get each remaining player's state, run it through the network to get action probabilities and value estimates
+3. Sample actions from the probability distributions
+4. Step the environment
+5. Store the experience tuple for each player at each decision: (state, action, log_prob, value_estimate)
+6. When the game ends, compute rewards: reward = (final_score / reward_score_scale) + (reward_win_bonus if this player won else 0)
+7. Compute advantages using GAE (Generalized Advantage Estimation) working backward through each player's sequence of decisions
+
+Return all collected experiences as batches ready for PPO update.
+
+TESTING: Run self_play for a small batch (e.g., 10 games) with a randomly initialized network. Verify that experiences are collected, rewards are computed, and the data shapes look right.
+
+============================
+PHASE 5: logger.py and watchdog.py
+============================
+
+logger.py:
+- Wraps TensorBoard SummaryWriter
+- Logs per-batch: average final score, average reward, policy loss, value loss, entropy, average pot size at banking
+- Logs per-evaluation: win rate vs "always bank at pot > 100" baseline strategy, win rate vs "always bank at pot > 200" baseline
+- Prints a concise summary line to the terminal each batch so you can see progress without TensorBoard
+
+watchdog.py:
+- Monitors training metrics and auto-halts if something goes wrong
+- Halt conditions:
+  1. NaN detected in any network weight or loss value -> halt immediately
+  2. Policy loss exceeds 10x its running average -> halt
+  3. Average score drops below 50% of its peak for 20 consecutive batches -> halt
+  4. Policy collapse: the network outputs the same action for >95% of states in a batch for 10 consecutive batches -> halt
+- When halting: save the current checkpoint, save the last known good checkpoint separately, print a clear message explaining which condition triggered and what the relevant values were
+- Return a status that the training loop checks each iteration
+
+============================
+PHASE 6: trainer.py and train.py
+============================
+
+trainer.py:
+- Implements PPO update step
+- Takes a batch of experiences (states, actions, log_probs, returns, advantages)
+- For ppo_epochs iterations:
+  - Compute new log_probs, entropy, and value estimates for the batch
+  - Compute the ratio: exp(new_log_prob - old_log_prob)
+  - Compute clipped surrogate objective
+  - Compute value loss (MSE between value estimates and returns)
+  - Total loss = -policy_loss + value_loss_coefficient * value_loss - entropy_coefficient * entropy
+  - Backpropagate and update with gradient clipping (max_grad_norm)
+
+train.py (the entry point script):
+- Initializes the network, optimizer, logger, and watchdog
+- Main loop:
+  1. Run self_play to collect a batch of experiences
+  2. Run PPO update
+  3. Log metrics
+  4. Check watchdog — if triggered, save and stop
+  5. Every checkpoint_interval batches, save a checkpoint to models/
+  6. Every eval_interval batches, run evaluation games against baseline strategies
+- Supports resuming from a checkpoint (pass a --resume flag with a checkpoint path)
+- Prints estimated time remaining based on batch processing speed
+
+TESTING: Run train.py for 10 batches. Verify: checkpoints are saved, TensorBoard logs are written (check by running "tensorboard --logdir=runs" and opening the browser), terminal output shows progress, no crashes.
+
+============================
+PHASE 7: play_vs_ai.py
+============================
+
+A terminal-based interactive game where a human plays against AI opponents.
+
+Usage: python play_vs_ai.py --checkpoint models/checkpoint_1000.pt --num_ai 3
+
+Flow:
+- Load the specified checkpoint
+- Play a 10-round game
+- Each roll: display the dice values, the current pot, the round number, the roll number, whether immunity is active, all players' banked scores, and which players are still in
+- After each roll (that doesn't bust): ask the human to type "bank" or "continue"
+- The AI players make their decisions simultaneously (using the loaded network)
+- Show what each AI decided
+- At the end: show final scores and declare the winner
+
+Make the display clean and readable. Use clear formatting so the human always knows the game state.
+
+============================
+PHASE 8: ai_vs_ai.py and tournament.py
+============================
+
+ai_vs_ai.py:
+- Load two checkpoints, simulate N games (default 10,000), report win rates and average scores for each.
+- Usage: python ai_vs_ai.py --model1 models/checkpoint_1000.pt --model2 models/checkpoint_5000.pt --games 10000
+
+tournament.py:
+- Defines a standard AI interface: a function/class that takes a game state dictionary and returns "bank" or "continue"
+- Includes a few built-in baseline strategies:
+  - AlwaysContinue: never banks (reckless)
+  - ThresholdBot(n): banks when pot exceeds n
+  - RandomBot(p): banks with probability p each decision
+- Can load any checkpoint as a competitor
+- Can accept external AI implementations that follow the interface
+- Runs a round-robin tournament: every competitor plays against every other competitor for N games each
+- Outputs a leaderboard with win rates and average scores
+
+============================
+REWARD FUNCTION (V1 PPO)
+============================
+
+At the end of each game, each player's reward is:
+reward = (player_final_score / config.reward_score_scale) + (config.reward_win_bonus if player_won else 0.0)
+
+In case of a tie for first place, all tied players receive the win bonus.
+
+This gives gradient signal from score magnitude AND incentivizes winning.
+
+(NOTE: v2 abandons this in favor of binary win/loss — see v2/PLAN.md.)
+
+============================
+TECHNICAL NOTES
+============================
+
+- This project runs on CPU only (PyTorch CPU). The network is small enough that GPU provides no benefit.
+- All hyperparameters come from config.py. Never hardcode values elsewhere.
+- Checkpoint files should save: network state_dict, optimizer state_dict, batch number, and running metrics (so watchdog baselines persist across resumes).
+- The human player in play_vs_ai.py should be treated identically to an AI player by the environment — the only difference is where the bank/continue decision comes from.
+- When computing advantages with GAE, each player's trajectory within a game should be treated independently (they have different banking points and therefore different trajectory lengths).
+- Normalize advantages within each batch (subtract mean, divide by standard deviation) before the PPO update. This stabilizes training.
+- Use torch.no_grad() during self-play data collection (only enable gradients during the PPO update step).
+- Seed the random number generator in config for reproducibility, but allow overriding.
+
+============================
+WHAT NOT TO DO (V1-SPECIFIC)
+============================
+
+- Do NOT make the network too large. Two hidden layers of 128 is sufficient.
+- Do NOT use GPU-specific code. Keep everything CPU-compatible.
+- Do NOT build multiple files at once. Follow the phase order strictly.
+- Do NOT skip testing after each phase.
+
+(For game-rule mistakes to avoid, see v2/GAME_RULES.md.)

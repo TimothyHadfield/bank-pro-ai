@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bank AI</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- SETUP SCREEN -->
+    <div id="setup-screen" class="screen">
+        <div class="setup-container">
+            <h1 class="title">BANK</h1>
+            <p class="subtitle">Can you outsmart the AI?</p>
+
+            <div class="setup-form">
+                <div class="form-group">
+                    <label for="num-ai-select">AI Opponents</label>
+                    <select id="num-ai-select">
+                        <option value="1">1 opponent</option>
+                        <option value="2">2 opponents</option>
+                        <option value="3" selected>3 opponents</option>
+                        <option value="4">4 opponents</option>
+                        <option value="5">5 opponents</option>
+                    </select>
+                </div>
+                <p id="model-info" class="model-info">Loading AI model...</p>
+                <button id="start-btn" class="btn btn-primary btn-large" onclick="startGame()" disabled>
+                    Start Game
+                </button>
+            </div>
+
+            <div class="rules-box">
+                <h3>How to Play</h3>
+                <ul>
+                    <li>10 rounds. Two dice rolled each turn. All players share one pot.</li>
+                    <li><strong>Bank</strong> to lock in the current pot as your score.</li>
+                    <li><strong>Continue</strong> to risk it for a bigger pot.</li>
+                    <li>Rolls 1-3 have <em>immunity</em> (auto-rolled, no banking): a 7 adds +70, doubles just add their sum.</li>
+                    <li>After immunity: a 7 <em>wipes the pot to 0</em> and ends the round. Doubles <em>double the pot</em>.</li>
+                    <li>Highest total score after 10 rounds wins!</li>
+                </ul>
+                <div class="keyboard-hint">
+                    Keyboard: press <kbd>B</kbd> to bank, <kbd>C</kbd> to continue
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- GAME SCREEN -->
+    <div id="game-screen" class="screen hidden">
+        <!-- Top bar -->
+        <div class="top-bar">
+            <div class="round-info">
+                <span class="label">Round</span>
+                <span id="round-num" class="value">1</span>
+                <span class="separator">/</span>
+                <span class="value">10</span>
+            </div>
+            <div class="roll-info">
+                <span class="label">Roll</span>
+                <span id="roll-num" class="value">1</span>
+            </div>
+            <div id="immunity-badge" class="immunity-badge active">
+                IMMUNITY
+            </div>
+            <button class="btn btn-small btn-muted" onclick="showSetup()">New Game</button>
+        </div>
+
+        <!-- Main game area -->
+        <div class="game-layout">
+            <!-- Left: Scoreboard -->
+            <div class="scoreboard">
+                <h3>Scores</h3>
+                <div id="score-entries"></div>
+            </div>
+
+            <!-- Center: Dice + Pot + Actions -->
+            <div class="center-area">
+                <!-- Dice display -->
+                <div class="dice-area">
+                    <div id="die-1" class="die">
+                        <div class="die-face"></div>
+                    </div>
+                    <div class="dice-sum-badge">
+                        <span id="dice-sum-display">=</span>
+                    </div>
+                    <div id="die-2" class="die">
+                        <div class="die-face"></div>
+                    </div>
+                </div>
+
+                <!-- Roll tag -->
+                <div id="roll-tag" class="roll-tag hidden"></div>
+
+                <!-- Pot display -->
+                <div class="pot-area">
+                    <div class="pot-label">POT</div>
+                    <div id="pot-value" class="pot-value">0</div>
+                </div>
+
+                <!-- Action buttons -->
+                <div id="action-area" class="action-area hidden">
+                    <button id="btn-bank" class="btn btn-bank" onclick="doAction('bank')">
+                        BANK
+                        <span class="btn-hint">Lock in points</span>
+                    </button>
+                    <button id="btn-continue" class="btn btn-continue" onclick="doAction('continue')">
+                        CONTINUE
+                        <span class="btn-hint">Risk it</span>
+                    </button>
+                </div>
+
+                <!-- Next Round button (shown after bust) -->
+                <div id="next-round-area" class="next-round-area hidden">
+                    <button class="btn btn-next-round" onclick="nextRound()">
+                        NEXT ROUND
+                        <span class="btn-hint">Press Enter or click</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Right: Event log -->
+            <div class="event-log">
+                <h3>Game Log</h3>
+                <div id="log-entries"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- GAME OVER OVERLAY -->
+    <div id="gameover-overlay" class="overlay hidden">
+        <div class="overlay-content">
+            <h2 id="gameover-title">Game Over</h2>
+            <div id="gameover-scores"></div>
+            <button class="btn btn-primary btn-large" onclick="showSetup()">Play Again</button>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>

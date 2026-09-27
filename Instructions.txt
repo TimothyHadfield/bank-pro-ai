@@ -1,0 +1,16 @@
+PROJECT: Bank AI — A neural-network agent that learns to play the dice game "Bank" at near-optimal level.
+
+This file used to contain the full v1 build instructions and game rules. Those have been split:
+
+  - GAME RULES (universal, applies to all versions):
+      bank-ai-v2-mcts/GAME_RULES.md
+
+  - V1 PPO BUILD INSTRUCTIONS (historical, for the original PPO implementation):
+      bank-ai-v1-ppo/BUILD_INSTRUCTIONS.txt
+
+  - V2 MCTS PLAN (current effort, AlphaZero-style approach):
+      bank-ai-v2-mcts/PLAN.md
+      bank-ai-v2-mcts/NOTES.md
+      bank-ai-v2-mcts/ANALYSIS.md
+
+OVERALL GOAL: Build an AI that plays Bank as close to theoretically optimal as possible, against any number of opponents (2-6 players).

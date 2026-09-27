@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bank AI</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- SETUP SCREEN -->
+    <div id="setup-screen" class="screen">
+        <div class="setup-container">
+            <h1 class="title">BANK</h1>
+            <p class="subtitle">Can you outsmart the AI?</p>
+
+            <div class="setup-form">
+                <div class="form-group">
+                    <label for="checkpoint-select">AI Model</label>
+                    <select id="checkpoint-select">
+                        {% for cp in checkpoints %}
+                        <option value="{{ cp }}">{{ cp }}</option>
+                        {% endfor %}
+                        {% if not checkpoints %}
+                        <option value="">No checkpoints (random AI)</option>
+                        {% endif %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="num-ai-select">AI Opponents</label>
+                    <select id="num-ai-select">
+                        <option value="1">1 opponent</option>
+                        <option value="2">2 opponents</option>
+                        <option value="3" selected>3 opponents</option>
+                        <option value="4">4 opponents</option>
+                        <option value="5">5 opponents</option>
+                    </select>
+                </div>
+                <button id="start-btn" class="btn btn-primary btn-large" onclick="startGame()">
+                    Start Game
+                </button>
+            </div>
+
+            <div class="rules-box">
+                <h3>How to Play</h3>
+                <ul>
+                    <li>10 rounds. Two dice rolled each turn. All players share one pot.</li>
+                    <li><strong>Bank</strong> to lock in the current pot as your score.</li>
+                    <li><strong>Continue</strong> to risk it for a bigger pot.</li>
+                    <li>Rolls 1-3 have <em>immunity</em>: rolling a 7 adds +70, doubles just add their sum.</li>
+                    <li>After immunity: a 7 <em>wipes the pot to 0</em> and ends the round. Doubles <em>double the pot</em>.</li>
+                    <li>Highest total score after 10 rounds wins!</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- GAME SCREEN -->
+    <div id="game-screen" class="screen hidden">
+        <!-- Top bar -->
+        <div class="top-bar">
+            <div class="round-info">
+                <span class="label">Round</span>
+                <span id="round-num" class="value">1</span>
+                <span class="separator">/</span>
+                <span class="value">10</span>
+            </div>
+            <div class="roll-info">
+                <span class="label">Roll</span>
+                <span id="roll-num" class="value">1</span>
+            </div>
+            <div id="immunity-badge" class="immunity-badge active">
+                IMMUNITY
+            </div>
+            <button class="btn btn-small btn-muted" onclick="showSetup()">New Game</button>
+        </div>
+
+        <!-- Main game area -->
+        <div class="game-layout">
+            <!-- Left: Scoreboard -->
+            <div class="scoreboard">
+                <h3>Scores</h3>
+                <div id="score-entries"></div>
+            </div>
+
+            <!-- Center: Dice + Pot + Actions -->
+            <div class="center-area">
+                <!-- Dice display -->
+                <div class="dice-area">
+                    <div id="die-1" class="die">
+                        <div class="die-face"></div>
+                    </div>
+                    <div class="dice-sum-badge">
+                        <span id="dice-sum-display">=</span>
+                    </div>
+                    <div id="die-2" class="die">
+                        <div class="die-face"></div>
+                    </div>
+                </div>
+
+                <!-- Roll tag -->
+                <div id="roll-tag" class="roll-tag hidden"></div>
+
+                <!-- Pot display -->
+                <div class="pot-area">
+                    <div class="pot-label">POT</div>
+                    <div id="pot-value" class="pot-value">0</div>
+                </div>
+
+                <!-- Action buttons -->
+                <div id="action-area" class="action-area hidden">
+                    <button id="btn-bank" class="btn btn-bank" onclick="doAction('bank')">
+                        BANK
+                        <span class="btn-hint">Lock in points</span>
+                    </button>
+                    <button id="btn-continue" class="btn btn-continue" onclick="doAction('continue')">
+                        CONTINUE
+                        <span class="btn-hint">Risk it</span>
+                    </button>
+                </div>
+
+                <!-- Waiting indicator -->
+                <div id="waiting-area" class="waiting-area hidden">
+                    <div class="spinner"></div>
+                    <span>Processing...</span>
+                </div>
+            </div>
+
+            <!-- Right: Event log -->
+            <div class="event-log">
+                <h3>Game Log</h3>
+                <div id="log-entries"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- GAME OVER OVERLAY -->
+    <div id="gameover-overlay" class="overlay hidden">
+        <div class="overlay-content">
+            <h2 id="gameover-title">Game Over</h2>
+            <div id="gameover-scores"></div>
+            <button class="btn btn-primary btn-large" onclick="showSetup()">Play Again</button>
+        </div>
+    </div>
+
+    <script>
+        let gameId = null;
+        let currentState = null;
+
+        // ===================== SETUP =====================
+        function showSetup() {
+            document.getElementById("setup-screen").classList.remove("hidden");
+            document.getElementById("game-screen").classList.add("hidden");
+            document.getElementById("gameover-overlay").classList.add("hidden");
+            gameId = null;
+        }
+
+        async function startGame() {
+            const checkpoint = document.getElementById("checkpoint-select").value;
+            const numAi = parseInt(document.getElementById("num-ai-select").value);
+
+            document.getElementById("start-btn").disabled = true;
+            document.getElementById("start-btn").textContent = "Starting...";
+
+            try {
+                const resp = await fetch("/api/new_game", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({checkpoint, num_ai: numAi}),
+                });
+                const data = await resp.json();
+                if (data.error) {
+                    alert(data.error);
+                    return;
+                }
+
+                gameId = data.game_id;
+                currentState = data;
+
+                document.getElementById("setup-screen").classList.add("hidden");
+                document.getElementById("game-screen").classList.remove("hidden");
+
+                clearLog();
+                addLog(data.message, "system");
+                updateUI(data);
+            } finally {
+                document.getElementById("start-btn").disabled = false;
+                document.getElementById("start-btn").textContent = "Start Game";
+            }
+        }
+
+        // ===================== ACTIONS =====================
+        async function doAction(action) {
+            if (!gameId) return;
+
+            document.getElementById("action-area").classList.add("hidden");
+            document.getElementById("waiting-area").classList.remove("hidden");
+
+            const myAction = action.toUpperCase();
+            addLog(`You chose to ${myAction}`, action === "bank" ? "bank" : "continue-log");
+
+            try {
+                const resp = await fetch("/api/action", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({game_id: gameId, action}),
+                });
+                const data = await resp.json();
+                if (data.error) {
+                    alert(data.error);
+                    return;
+                }
+
+                currentState = data;
+
+                // Log AI decisions
+                if (data.ai_decisions) {
+                    for (const [pid, dec] of Object.entries(data.ai_decisions)) {
+                        const cls = dec === "bank" ? "bank" : "continue-log";
+                        addLog(`AI ${pid}: ${dec.toUpperCase()}`, cls);
+                    }
+                }
+
+                // Log messages
+                if (data.message) {
+                    const lines = data.message.split("\n");
+                    for (const line of lines) {
+                        if (line.startsWith("AI ") && (line.includes("chose to") || line.includes("BANK") || line.includes("CONTINUE"))) continue;
+                        if (line.trim()) {
+                            let cls = "system";
+                            if (line.includes("banked")) cls = "bank";
+                            if (line.includes("7") || line.includes("wiped")) cls = "bust";
+                            if (line.includes("Round ended")) cls = "round-end";
+                            addLog(line, cls);
+                        }
+                    }
+                }
+
+                updateUI(data);
+
+                if (data.game_over) {
+                    showGameOver(data);
+                }
+            } finally {
+                document.getElementById("waiting-area").classList.add("hidden");
+            }
+        }
+
+        // ===================== UI UPDATE =====================
+        function updateUI(state) {
+            // Round and roll
+            document.getElementById("round-num").textContent = state.round_number;
+            document.getElementById("roll-num").textContent = state.roll_number;
+
+            // Immunity badge
+            const badge = document.getElementById("immunity-badge");
+            if (state.immunity_active) {
+                badge.classList.add("active");
+                badge.classList.remove("expired");
+                badge.textContent = "IMMUNITY";
+            } else {
+                badge.classList.remove("active");
+                badge.classList.add("expired");
+                badge.textContent = "NO IMMUNITY";
+            }
+
+            // Dice
+            setDie("die-1", state.dice[0]);
+            setDie("die-2", state.dice[1]);
+            document.getElementById("dice-sum-display").textContent = `= ${state.dice_sum}`;
+
+            // Roll tag
+            const tag = document.getElementById("roll-tag");
+            if (state.is_seven && state.immunity_active) {
+                tag.textContent = "LUCKY 7! +70";
+                tag.className = "roll-tag tag-lucky";
+            } else if (state.is_seven && !state.immunity_active) {
+                tag.textContent = "BUST! 7 ROLLED!";
+                tag.className = "roll-tag tag-bust";
+            } else if (state.is_doubles && !state.immunity_active) {
+                tag.textContent = "DOUBLES! POT x2";
+                tag.className = "roll-tag tag-doubles";
+            } else if (state.is_doubles && state.immunity_active) {
+                tag.textContent = `DOUBLES (immunity: +${state.dice_sum})`;
+                tag.className = "roll-tag tag-normal";
+            } else {
+                tag.textContent = `+${state.dice_sum}`;
+                tag.className = "roll-tag tag-normal";
+            }
+            tag.classList.remove("hidden");
+
+            // Pot
+            const potEl = document.getElementById("pot-value");
+            potEl.textContent = state.pot;
+            potEl.className = "pot-value";
+            if (state.pot === 0) potEl.classList.add("pot-zero");
+            else if (state.pot >= 500) potEl.classList.add("pot-high");
+            else if (state.pot >= 200) potEl.classList.add("pot-medium");
+
+            // Scores
+            updateScoreboard(state);
+
+            // Action buttons
+            if (state.waiting_for_decision && !state.game_over) {
+                document.getElementById("action-area").classList.remove("hidden");
+            } else {
+                document.getElementById("action-area").classList.add("hidden");
+            }
+        }
+
+        function updateScoreboard(state) {
+            const container = document.getElementById("score-entries");
+            container.innerHTML = "";
+
+            // Human
+            const humanEl = document.createElement("div");
+            humanEl.className = "score-entry" + (state.human_in_round ? " in-round" : " banked-out");
+            humanEl.innerHTML = `
+                <div class="score-name">
+                    <span class="player-dot human-dot"></span>
+                    You
+                    <span class="status-tag">${state.human_in_round ? "IN" : "OUT"}</span>
+                </div>
+                <div class="score-val">${state.human_score}</div>
+            `;
+            container.appendChild(humanEl);
+
+            // AI players
+            for (const ai of state.ai_scores) {
+                const el = document.createElement("div");
+                el.className = "score-entry" + (ai.in_round ? " in-round" : " banked-out");
+                el.innerHTML = `
+                    <div class="score-name">
+                        <span class="player-dot ai-dot"></span>
+                        AI ${ai.id}
+                        <span class="status-tag">${ai.in_round ? "IN" : "OUT"}</span>
+                    </div>
+                    <div class="score-val">${ai.score}</div>
+                `;
+                container.appendChild(el);
+            }
+        }
+
+        function setDie(dieId, value) {
+            const die = document.getElementById(dieId);
+            // Remove old pip classes
+            die.className = "die";
+            die.classList.add("die-val-" + value);
+
+            const face = die.querySelector(".die-face");
+            face.innerHTML = "";
+            for (let i = 0; i < value; i++) {
+                const pip = document.createElement("span");
+                pip.className = "pip";
+                face.appendChild(pip);
+            }
+        }
+
+        // ===================== LOG =====================
+        function addLog(text, cls) {
+            const container = document.getElementById("log-entries");
+            const entry = document.createElement("div");
+            entry.className = "log-entry log-" + (cls || "system");
+            entry.textContent = text;
+            container.prepend(entry);
+        }
+
+        function clearLog() {
+            document.getElementById("log-entries").innerHTML = "";
+        }
+
+        // ===================== GAME OVER =====================
+        function showGameOver(state) {
+            const overlay = document.getElementById("gameover-overlay");
+            overlay.classList.remove("hidden");
+
+            const title = document.getElementById("gameover-title");
+            if (state.human_won) {
+                title.textContent = "You Win!";
+                title.className = "gameover-win";
+            } else {
+                title.textContent = "You Lost";
+                title.className = "gameover-lose";
+            }
+
+            const scoresDiv = document.getElementById("gameover-scores");
+            scoresDiv.innerHTML = "";
+
+            if (state.final_scores) {
+                const sorted = Object.entries(state.final_scores).sort((a, b) => b[1] - a[1]);
+                for (const [name, score] of sorted) {
+                    const row = document.createElement("div");
+                    row.className = "final-score-row";
+                    const isWinner = state.winners && (
+                        (name === "You" && state.winners.includes(0)) ||
+                        (name.startsWith("AI") && state.winners.includes(parseInt(name.split(" ")[1])))
+                    );
+                    if (isWinner) row.classList.add("winner");
+                    row.innerHTML = `
+                        <span class="final-name">${name}</span>
+                        <span class="final-score">${score}</span>
+                        ${isWinner ? '<span class="crown">&#x1F451;</span>' : ''}
+                    `;
+                    scoresDiv.appendChild(row);
+                }
+            }
+        }
+
+        // ===================== KEYBOARD =====================
+        document.addEventListener("keydown", (e) => {
+            if (!gameId || !currentState || !currentState.waiting_for_decision) return;
+            if (e.key === "b" || e.key === "B") doAction("bank");
+            if (e.key === "c" || e.key === "C") doAction("continue");
+        });
+    </script>
+</body>
+</html>
