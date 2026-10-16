@@ -35,6 +35,22 @@ V2_MODELS_DIR = os.path.join(V2_PROJECT_DIR, "models")
 V2_METRICS_PATH = os.path.join(V2_PROJECT_DIR, "metrics.json")
 V2_SAVES_DIR = os.path.join(V2_PROJECT_DIR, "saves")
 
+def _is_plain_name(name) -> bool:
+    """True if `name` is a single file/folder name (no path parts, not "." or "..").
+
+    Save and checkpoint names from the browser are joined onto the saves/models
+    folders, and some of those endpoints delete what they point at. Without this,
+    a name like "." or "../x" would reach the whole saves folder or outside it.
+    """
+    return (
+        isinstance(name, str)
+        and name not in ("", ".", "..")
+        and os.path.basename(name) == name
+        and "/" not in name and "\\" not in name
+        and ":" not in name
+    )
+
+
 _config = Config()
 _process = None
 _process_lock = threading.Lock()
@@ -246,6 +262,9 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
         elif path.startswith("/api/weights/"):
             filename = urlparse.unquote(path.split("/api/weights/", 1)[1])
+            if not _is_plain_name(filename):
+                self._json_response({"error": "Invalid checkpoint name"}, 400)
+                return
             ckpt_path = os.path.join(PROJECT_DIR, _config.model_dir, filename)
             if not os.path.exists(ckpt_path):
                 self._json_response({"error": "Checkpoint not found: " + filename}, 404)
@@ -502,6 +521,9 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             if not save_name:
                 self._json_response({"error": "No save name specified"}, 400)
                 return
+            if not _is_plain_name(save_name):
+                self._json_response({"error": "Invalid save name"}, 400)
+                return
             save_dir = os.path.join(PROJECT_DIR, "saves", save_name)
             if not os.path.isdir(save_dir):
                 self._json_response({"error": f"Save not found: {save_name}"}, 404)
@@ -569,7 +591,10 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             if not filename:
                 self._json_response({"error": "No filename specified"}, 400)
                 return
-            filepath = os.path.join(PROJECT_DIR, _config.model_dir, filename)
+            if not _is_plain_name(filename):
+                self._json_response({"error": "Invalid checkpoint name"}, 400)
+                return
+            filepath =os.path.join(PROJECT_DIR, _config.model_dir, filename)
             if os.path.exists(filepath):
                 try:
                     os.remove(filepath)
@@ -588,7 +613,10 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             if not save_name:
                 self._json_response({"error": "No name specified"}, 400)
                 return
-            save_dir = os.path.join(PROJECT_DIR, "saves", save_name)
+            if not _is_plain_name(save_name):
+                self._json_response({"error": "Invalid save name"}, 400)
+                return
+            save_dir =os.path.join(PROJECT_DIR, "saves", save_name)
             if os.path.isdir(save_dir):
                 try:
                     # Try normal delete first
@@ -749,7 +777,10 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             if not save_name:
                 self._json_response({"error": "no save name"}, 400)
                 return
-            src = os.path.join(V2_SAVES_DIR, save_name)
+            if not _is_plain_name(save_name):
+                self._json_response({"error": "invalid save name"}, 400)
+                return
+            src =os.path.join(V2_SAVES_DIR, save_name)
             if not os.path.isdir(src):
                 self._json_response({"error": "save not found"}, 404)
                 return
@@ -902,17 +933,28 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                         actions[pid] = competitor.decide(game, pid, rng)
 
                     revealed = dict(actions)
+                    round_before = game.round_number
+                    anyone_continued = any(a == CONTINUE for a in actions.values())
                     game.step(actions)
+                    # The engine starts the next round (and auto-rolls its immunity) inside
+                    # step(), so last_dice then belongs to the NEW round. Tell the client
+                    # whether the round ended and whether that was a 7 (someone was still in).
+                    round_ended = game.game_over or game.round_number != round_before
+                    busted = round_ended and anyone_continued
                     _play_session["history"].append({
-                        "round": game.round_number,
+                        "round": round_before,
                         "actions": revealed,
-                        "dice": list(game.last_dice) if game.last_dice else None,
+                        "dice": list(game.last_dice) if game.last_dice and not round_ended else None,
+                        "round_ended": round_ended,
+                        "busted": busted,
                     })
 
                     self._json_response({
                         "ok": True,
                         "state": _serialize_play_state(game, human_seats, revealed_actions=revealed),
                         "history": _play_session["history"][-30:],
+                        "round_ended": round_ended,
+                        "busted": busted,
                     })
             except Exception as e:
                 import traceback; traceback.print_exc()
@@ -997,6 +1039,9 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             save_name = (body or {}).get("name")
             if not save_name:
                 self._json_response({"error": "no save name"}, 400)
+                return
+            if not _is_plain_name(save_name):
+                self._json_response({"error": "invalid save name"}, 400)
                 return
             target = os.path.join(V2_SAVES_DIR, save_name)
             if not os.path.isdir(target):
@@ -1090,7 +1135,9 @@ def main():
     print(f"  Press Ctrl+C to stop.\n")
 
     global _server_ref
-    server = HTTPServer(("0.0.0.0", args.port), DashboardHandler)
+    # Local only (same as the v2 server): the dashboard runs Build AI code and can
+    # delete checkpoints/saves, so other devices on the network must not reach it.
+    server = HTTPServer(("127.0.0.1", args.port), DashboardHandler)
     _server_ref = server
     try:
         server.serve_forever()

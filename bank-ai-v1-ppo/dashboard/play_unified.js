@@ -13,6 +13,25 @@
     let currentAILabel = null;
     let humanSeats = [];
     let waitingForServer = false;
+    // With 2+ human players, each human decides in turn (like V1 mode); the move is
+    // sent once every human still in the round has decided.
+    let pendingHumanActions = {};
+
+    function humansStillToDecide() {
+        if (!currentState) return [];
+        return humanSeats.filter(s => currentState.players_in_round.includes(s) && !(s in pendingHumanActions));
+    }
+
+    function showHumanTurnLabel() {
+        const turnLabel = document.getElementById("play-turn-label");
+        const next = humansStillToDecide()[0];
+        if (humanSeats.length > 1 && next !== undefined) {
+            turnLabel.textContent = `Player ${next + 1}'s turn`;
+            turnLabel.classList.remove("hidden");
+        } else {
+            turnLabel.classList.add("hidden");
+        }
+    }
 
     // --------- type-switching dropdown ---------
 
@@ -182,6 +201,7 @@
         currentAIType = r.ai_type;
         currentAILabel = r.ai_label;
         currentState = r.state;
+        pendingHumanActions = {};
 
         // Switch UI to game view
         document.getElementById("play-setup").classList.add("hidden");
@@ -195,22 +215,30 @@
 
     async function submitUnifiedAction(action) {
         if (waitingForServer || !currentState) return;
-        // Find the human seat that's currently waiting
-        const waitingSeat = humanSeats.find(s => currentState.players_in_round.includes(s));
+        // The next human seat (in seat order) that still has to decide this turn
+        const waitingSeat = humansStillToDecide()[0];
         if (waitingSeat === undefined) return;
+        pendingHumanActions[waitingSeat] = action;
+        playUnifiedLog(`P${waitingSeat + 1}: ${action.toUpperCase()}`, "log-human");
+        if (humansStillToDecide().length > 0) {
+            // Another human still has to choose before the move goes to the server
+            showHumanTurnLabel();
+            return;
+        }
         waitingForServer = true;
         document.getElementById("play-buttons").classList.add("hidden");
-        playUnifiedLog(`P${waitingSeat + 1}: ${action.toUpperCase()}`, "log-human");
 
         // Show "thinking" indicator
         const turnLabel = document.getElementById("play-turn-label");
+        turnLabel.classList.add("hidden");
         if (currentAIType === "v2") {
             turnLabel.textContent = `${currentAILabel} is thinking...`;
             turnLabel.classList.remove("hidden");
         }
 
         const actions = {};
-        actions[String(waitingSeat)] = action;
+        for (const [seat, act] of Object.entries(pendingHumanActions)) actions[String(seat)] = act;
+        pendingHumanActions = {};
 
         let r;
         try {
@@ -243,16 +271,28 @@
                 }
             }
             if (aiLines.length) playUnifiedLog(aiLines.join("  ·  "), "log-ai");
-            if (r.state.last_dice) {
-                const sum = r.state.last_dice[0] + r.state.last_dice[1];
-                let tag = `${r.state.last_dice[0]}+${r.state.last_dice[1]} = ${sum}`;
-                if (sum === 7 && !r.state.immunity_active) tag += " (BUST)";
-                else if (r.state.last_dice[0] === r.state.last_dice[1] && !r.state.immunity_active) tag += " (×2)";
-                playUnifiedLog(`Roll: ${tag}`, "log-dice");
-            }
         }
+        logRollOrRoundEnd(r);
 
         renderUnifiedState();
+    }
+
+    // When a round ends the engine already starts the next one (and rolls its first
+    // die pair), so last_dice is the NEW round's roll. Log the bust / new round
+    // instead of a roll line that would hide the 7.
+    function logRollOrRoundEnd(r) {
+        if (r.round_ended) {
+            if (r.busted) playUnifiedLog("7 rolled! Pot wiped! Round over!", "log-warn");
+            if (!r.state.game_over) playUnifiedLog(`Round ended. Starting round ${r.state.round_number}.`, "log-dice");
+            return;
+        }
+        if (r.state.last_dice) {
+            const sum = r.state.last_dice[0] + r.state.last_dice[1];
+            let tag = `${r.state.last_dice[0]}+${r.state.last_dice[1]} = ${sum}`;
+            if (sum === 7 && !r.state.immunity_active) tag += " (BUST)";
+            else if (r.state.last_dice[0] === r.state.last_dice[1] && !r.state.immunity_active) tag += " (×2)";
+            playUnifiedLog(`Roll: ${tag}`, "log-dice");
+        }
     }
 
     function renderUnifiedState() {
@@ -339,6 +379,7 @@
         const humanWaiting = humanSeats.some(s2 => s.players_in_round.includes(s2));
         if (humanWaiting && !waitingForServer) {
             btns.classList.remove("hidden");
+            showHumanTurnLabel();
         } else {
             btns.classList.add("hidden");
         }
@@ -369,11 +410,8 @@
                 aiLines.push(`P${parseInt(pidStr, 10) + 1} (AI): ${act}`);
             }
             if (aiLines.length) playUnifiedLog(aiLines.join("  ·  "), "log-ai");
-            if (r.state.last_dice) {
-                const sum = r.state.last_dice[0] + r.state.last_dice[1];
-                playUnifiedLog(`Roll: ${r.state.last_dice[0]}+${r.state.last_dice[1]} = ${sum}`, "log-dice");
-            }
         }
+        logRollOrRoundEnd(r);
         renderUnifiedState();
     }
 
