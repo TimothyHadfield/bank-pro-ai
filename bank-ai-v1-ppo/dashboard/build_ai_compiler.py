@@ -10,8 +10,8 @@ User code uses Python-ish syntax with two extra keywords:
 
 Variables exposed to user code (matching the JS variant):
     pot, round, roll, players_in, my_score, num_players,
-    p1_score..p5_score        (opponent banked scores, 0 if no such opponent)
-    p1_banked..p5_banked      (1 if that opponent already banked this round, 0 otherwise)
+    p1_score..p5_score        (all banked scores sorted high to low, 0 past the last player)
+    p1_banked..p5_banked      (1 if that ranked player already banked this round, else 0)
 
 Plus any custom variables the user defined in their code.
 
@@ -100,15 +100,14 @@ def state_for_build_ai(game, player_id: int) -> dict:
     players_in = len(game.players_in_round)
     my_score = int(game.banked_scores[player_id])
 
-    # Opponents in fixed pid order (excluding self), padded to 5
-    opp_scores = []
-    opp_banked = []
-    for i in range(num_players):
-        if i == player_id:
-            continue
-        opp_scores.append(int(game.banked_scores[i]))
-        # "banked" means: this opponent has banked already this round (= NOT in players_in_round)
-        opp_banked.append(0 if i in game.players_in_round else 1)
+    # Same as build.js BuildBankGame.getVars(): p1..p5 are ALL players' scores sorted
+    # high to low (p1_score = leader, which may be you), and p1..p5_banked follow that
+    # same rank order. Stable sort keeps seat order for ties, like JS Array.sort.
+    all_scores = [int(s) for s in game.banked_scores]
+    ranked = sorted(range(num_players), key=lambda i: -all_scores[i])
+    opp_scores = [all_scores[i] for i in ranked][:5]
+    # "banked" means: banked already this round (= NOT in players_in_round)
+    opp_banked = [0 if i in game.players_in_round else 1 for i in ranked][:5]
     while len(opp_scores) < 5:
         opp_scores.append(0)
         opp_banked.append(0)
