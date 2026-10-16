@@ -1,6 +1,6 @@
 // Build AI tab — run a hand-coded `decide(state)` function vs a bot opponent.
 
-const { jpost } = window.dash;
+// jpost is a global from common.js.
 
 document.getElementById("btn-build-run").addEventListener("click", async () => {
     const code = document.getElementById("build-code").value;

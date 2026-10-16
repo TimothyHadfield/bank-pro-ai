@@ -1,6 +1,6 @@
 // Game Stats tab — pure dice probability tables.
 
-const { jget } = window.dash;
+// jget is a global from common.js.
 
 async function refresh() {
     let stats;

@@ -4,7 +4,7 @@
 // MCTS for all AI seats independently and applies all actions in one engine step().
 // We only reveal what each AI decided AFTER the step has been applied.
 
-const { jget, jpost } = window.dash;
+// jget and jpost are globals from common.js.
 
 const numPlayersSel = document.getElementById("play-num-players");
 const humanSeatSel = document.getElementById("play-human-seat");

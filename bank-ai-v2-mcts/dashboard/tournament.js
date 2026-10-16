@@ -1,6 +1,6 @@
 // Tournament tab.
 
-const { jget, jpost } = window.dash;
+// jget and jpost are globals from common.js.
 
 const competitorsEl = document.getElementById("trn-competitors");
 const resultsEl = document.getElementById("trn-results");

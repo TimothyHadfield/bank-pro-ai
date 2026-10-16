@@ -1,6 +1,7 @@
 // Training tab: start/stop/reset, save/load, polling for charts and log.
 
-const { jget, jpost, drawLineChart } = window.dash;
+// jget, jpost and drawLineChart are globals from common.js (re-declaring them here
+// with const stopped this whole file from loading).
 
 const startBtn = document.getElementById("btn-start");
 const stopBtn = document.getElementById("btn-stop");
